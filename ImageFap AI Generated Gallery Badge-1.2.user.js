@@ -71,6 +71,11 @@
         }
     `);
 
+    // --- Logging ---
+    function log() {
+        console.log.apply(console, ['[AI Badge]'].concat(Array.prototype.slice.call(arguments)));
+    }
+
     // --- Small helpers ---
     function sleep(ms) {
         return new Promise(function (resolve) { setTimeout(resolve, ms); });
@@ -210,13 +215,18 @@
         const merged = [];
         for (const url of BOOTSTRAP_SOURCES) {
             if (!url) continue;
+            log('Bootstrap: fetching ' + url);
             const res = await fetchText(url);
+            if (!res.ok) {
+                console.warn('[AI Badge] Bootstrap fetch failed for ' + url);
+                continue;
+            }
             const ids = parseBootstrapText(res.text);
             if (ids.length) {
                 merged.push.apply(merged, ids);
-                console.log('[AI Badge] Bootstrap: loaded ' + ids.length + ' IDs from ' + url);
+                log('Bootstrap: got ' + ids.length + ' IDs from ' + url);
             } else {
-                console.warn('[AI Badge] Bootstrap source empty or not found: ' + url);
+                console.warn('[AI Badge] Bootstrap source empty: ' + url);
             }
         }
         return merged;
@@ -236,15 +246,18 @@
         let seenKnown = false;
         let reachedFrontier = false;
 
+        log('Incremental load: starting (stored ' + knownSet.size + ' IDs).');
+
         for (let page = 1; page <= MAX_REFRESH_PAGES; page++) {
             const res = await fetchText(AI_LIST_PAGE_URL(page));
             if (!res.ok || !res.text) {
-                console.warn('[AI Badge] Incremental load page ' + page + ' failed; stopping.');
+                log('Incremental load: page ' + page + ' failed; stopping.');
                 break;
             }
             const gids = parseGidsFromHtml(res.text);
+            log('Incremental load: page ' + page + ' returned ' + gids.length + ' galleries.');
             if (gids.length === 0) {
-                console.log('[AI Badge] Incremental load: no galleries on page ' + page + '; done.');
+                log('Incremental load: page ' + page + ' empty; done.');
                 reachedFrontier = true;
                 break;
             }
@@ -255,19 +268,21 @@
                 merged.add(gids[i]);
                 if (knownSet.has(gids[i])) pageHasKnown = true;
             }
-            if (pageHasKnown) seenKnown = true;
+            if (pageHasKnown) {
+                seenKnown = true;
+                log('Incremental load: page ' + page + ' contains a gallery we already have.');
+            }
 
             if (seenKnown && gids.length >= MIN_FULL_PAGE) {
                 reachedFrontier = true;
-                console.log('[AI Badge] Incremental load: passed the known region on page ' + page + '.');
+                log('Incremental load: passed the known region on page ' + page + '.');
                 break;
             }
             if (page < MAX_REFRESH_PAGES) await sleep(REFRESH_PAGE_DELAY_MS);
         }
 
-        const out = { ids: Array.from(merged), idSet: merged, reachedFrontier: reachedFrontier };
-        console.log('[AI Badge] Incremental load: ' + fetched + ' pages, ' + merged.size + ' IDs total.');
-        return out;
+        log('Incremental load: fetched ' + fetched + ' pages, ' + merged.size + ' IDs total.');
+        return { ids: Array.from(merged), idSet: merged, reachedFrontier: reachedFrontier };
     }
 
     // --- Badge helpers ---
@@ -289,17 +304,19 @@
                 aiCount++;
             }
         });
-        console.log('[AI Badge] Badged ' + aiCount + ' of ' + galleries.length + ' galleries on this page.');
+        return aiCount;
     }
 
     // --- Main ---
     async function main() {
+        log('Running on ' + location.href);
+        lastGalleryCount = document.querySelectorAll('a.gal_title[href*="gallery.php?gid="]').length;
+
         let list = getList();
         const galleries = findGalleryLinks();
 
-        // Import the bootstrap once. Nothing (not even an incremental load) is
-        // attempted until we have a real list to compare against.
         if (list.ids.length === 0) {
+            log('No stored list. Importing bootstrap...');
             const bootstrapped = await loadBootstrap();
             if (bootstrapped.length === 0) {
                 console.warn('[AI Badge] No bootstrap data available; check BOOTSTRAP_SOURCES.');
@@ -311,11 +328,14 @@
             list.aiMaxId = maxIdOf(list.ids);
             list.lastSeenMaxGid = list.aiMaxId;
             saveList(list);
-            console.log('[AI Badge] Bootstrap imported: ' + list.ids.length + ' AI gallery IDs.');
+            log('Bootstrap imported: ' + list.ids.length + ' IDs, newest ' + list.aiMaxId + '.');
+        } else {
+            log('Loaded stored list: ' + list.ids.length + ' IDs, newest ' + (list.aiMaxId || 'n/a') + '.');
         }
 
         const idSet = new Set(list.ids);
-        applyBadges(galleries, idSet);
+        const badged = applyBadges(galleries, idSet);
+        log('Checked ' + galleries.length + ' galleries on this page; badged ' + badged + '.');
 
         // Trigger an incremental load only when we browse a gallery newer than
         // both the newest AI gallery we know and anything we have seen before.
@@ -324,24 +344,45 @@
             const n = parseInt(g.gid, 10);
             if (!isNaN(n) && n > maxOnPage) maxOnPage = n;
         });
-        list.lastSeenMaxGid = Math.max(list.lastSeenMaxGid || 0, maxOnPage);
 
         const threshold = Math.max(list.aiMaxId || 0, list.lastSeenMaxGid || 0);
+        log('Update check: newest on page ' + maxOnPage + ', newest known AI ' + list.aiMaxId + ', newest seen ' + list.lastSeenMaxGid + ', threshold ' + threshold + '.');
+
         if (maxOnPage > threshold) {
-            console.log('[AI Badge] Saw a newer gallery (' + maxOnPage + ' > ' + threshold + '); running incremental load.');
+            log('A newer gallery is on this page; running incremental load...');
             const loaded = await incrementalLoad(list);
             list.ids = loaded.ids;
             // Only advance the AI frontier once we actually caught up; otherwise
             // keep it so the next load continues where this one left off.
             if (loaded.reachedFrontier) list.aiMaxId = maxIdOf(list.ids);
+            list.lastSeenMaxGid = Math.max(list.lastSeenMaxGid || 0, maxOnPage);
             saveList(list);
-            // Re-apply so galleries that turned out to be AI get badged now.
-            applyBadges(findGalleryLinks(), loaded.idSet);
+            log('Incremental load done; list now ' + list.ids.length + ' IDs, newest ' + list.aiMaxId + '.');
+            const badgedAfter = applyBadges(findGalleryLinks(), loaded.idSet);
+            log('Re-applied badges after update; badged ' + badgedAfter + '.');
         } else {
+            list.lastSeenMaxGid = Math.max(list.lastSeenMaxGid || 0, maxOnPage);
             saveList(list);
+            log('No newer galleries; nothing to update.');
         }
     }
 
-    main().catch(function (e) { console.warn('[AI Badge]', e); });
+    function runMain() {
+        main().catch(function (e) { console.warn('[AI Badge]', e); });
+    }
+
+    runMain();
+
+    // Re-run when the page adds galleries (e.g. "next page" or infinite scroll).
+    let lastGalleryCount = -1;
+    let debounceTimer = null;
+    const observer = new MutationObserver(function () {
+        const count = document.querySelectorAll('a.gal_title[href*="gallery.php?gid="]').length;
+        if (count === lastGalleryCount) return;
+        lastGalleryCount = count;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(runMain, 800);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
 })();
