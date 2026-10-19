@@ -10,10 +10,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @connect      www.imagefap.com
-// @connect      pastebin.com
-// @connect      gist.githubusercontent.com
 // @connect      raw.githubusercontent.com
-// @connect      cdn.jsdelivr.net
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -32,24 +29,12 @@
     const AI_LIST_BASE = 'https://www.imagefap.com/pics/' + AI_CATEGORY_ID + '/gallery.php?type=1&userid=&gen=' + AI_CATEGORY_ID + '&search=&perpage=150';
     const AI_LIST_PAGE_URL = (page) => AI_LIST_BASE + '&page=' + page;
 
-    // Bootstrap sources. Each entry is either a full URL (GitHub Gist, GitHub
-    // repo raw, jsDelivr, PasteBin raw, ...) or a bare PasteBin paste ID. All
-    // sources are merged; use several only if a single file would exceed a
-    // host's limit. GitHub is preferred over PasteBin: no 512KB per-paste cap
-    // and full revision history.
-    //   Gist: https://gist.githubusercontent.com/<user>/<gist-id>/raw
-    //   Repo: https://raw.githubusercontent.com/<user>/<repo>/<branch>/<path>
-    //   CDN:  https://cdn.jsdelivr.net/gh/<user>/<repo>@<branch>/<path>
-    const PASTEBIN_RAW_BASE = 'https://pastebin.com/raw/';
+    // Bootstrap sources. Each entry is a full URL to a plain text file of
+    // gallery IDs, one per line. The canonical list is hosted in the GitHub
+    // repository for this project; the add-on reads it once and then keeps a
+    // local copy. Add more URLs only if a single file would be too large.
     const BOOTSTRAP_SOURCES = [
-        // GitHub Gist (preferred):
-        // 'https://gist.githubusercontent.com/you/0123456789abcdef/raw',
-        // GitHub repo raw:
-        // 'https://raw.githubusercontent.com/you/imagefap-ai/main/ai_ids.txt',
-        // jsDelivr CDN (cached):
-        // 'https://cdn.jsdelivr.net/gh/you/imagefap-ai@main/ai_ids.txt',
-        // PasteBin (512KB per paste; split across several IDs):
-        // 'PASTEBIN_ID_1',
+        'https://raw.githubusercontent.com/m00nh34dnsfw/imagefap-ai-gallery-badges/refs/heads/main/ai_ids.txt',
     ];
 
     // Incremental load tuning. The load fetches listing pages newest-first. The
@@ -223,9 +208,8 @@
     // --- Bootstrap: import the full known ID list once ---
     async function loadBootstrap() {
         const merged = [];
-        for (const source of BOOTSTRAP_SOURCES) {
-            if (!source || source.indexOf('PLACEHOLDER') === 0 || source.indexOf('PASTEBIN_ID_') === 0) continue;
-            const url = /^https?:\/\//i.test(source) ? source : PASTEBIN_RAW_BASE + source;
+        for (const url of BOOTSTRAP_SOURCES) {
+            if (!url) continue;
             const res = await fetchText(url);
             const ids = parseBootstrapText(res.text);
             if (ids.length) {
@@ -318,7 +302,7 @@
         if (list.ids.length === 0) {
             const bootstrapped = await loadBootstrap();
             if (bootstrapped.length === 0) {
-                console.warn('[AI Badge] No bootstrap data available; add a source to BOOTSTRAP_SOURCES.');
+                console.warn('[AI Badge] No bootstrap data available; check BOOTSTRAP_SOURCES.');
                 return;
             }
             list.ids = bootstrapped;
