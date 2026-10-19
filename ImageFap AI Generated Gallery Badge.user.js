@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         ImageFap AI Generated Gallery Badge
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Shows an AI Generated badge next to galleries in the "AI Generated" category on imagefap.com, using a bootstrapped ID list instead of scraping each gallery
-// @author       m00nh34dNSFW
+// @author       You
 // @match        https://www.imagefap.com/gallery.php*
+// @match        https://www.imagefap.com/pics/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_setValue
