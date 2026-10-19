@@ -371,11 +371,12 @@
         main().catch(function (e) { console.warn('[AI Badge]', e); });
     }
 
+    let lastGalleryCount = -1;
+    let debounceTimer = null;
+
     runMain();
 
     // Re-run when the page adds galleries (e.g. "next page" or infinite scroll).
-    let lastGalleryCount = -1;
-    let debounceTimer = null;
     const observer = new MutationObserver(function () {
         const count = document.querySelectorAll('a.gal_title[href*="gallery.php?gid="]').length;
         if (count === lastGalleryCount) return;
