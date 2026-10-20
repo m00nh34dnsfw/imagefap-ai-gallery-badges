@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ImageFap AI Generated Gallery Badge
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Shows an AI Generated badge next to galleries in the "AI Generated" category on imagefap.com, using a bootstrapped ID list instead of scraping each gallery
 // @author       m00nh34dNSFW
 // @match        https://www.imagefap.com/gallery.php*
@@ -111,6 +111,11 @@
     }
 
     // --- HTTP helper (cross-origin, bypasses the page origin) ---
+    // `anonymous: true` matters: without it Tampermonkey sends the user's
+    // cookies (PHPSESSID), and because our listing requests carry
+    // `perpage=150`, imagefap stores that as the user's "galleries per page"
+    // preference server-side. The public listing is byte-for-byte the same
+    // without cookies, so fetching anonymously keeps their settings intact.
     function fetchText(url, timeout) {
         return new Promise(function (resolve) {
             try {
@@ -118,6 +123,7 @@
                     method: 'GET',
                     url: url,
                     timeout: timeout || 20000,
+                    anonymous: true,
                     onload: function (response) { resolve({ ok: true, text: response.responseText || '' }); },
                     onerror: function () { resolve({ ok: false, text: '' }); },
                     ontimeout: function () { resolve({ ok: false, text: '' }); },
